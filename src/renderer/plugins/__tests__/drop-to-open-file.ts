@@ -148,6 +148,25 @@ describe('drop-to-open-file plugin', () => {
     expect(ctx.doc.switchDocByPath).toHaveBeenCalledWith('/notes/todo.md')
   })
 
+  test('uses Electron webUtils when the legacy File.path is unavailable', () => {
+    const { right, target } = createLayout()
+    const { ctx, windowListeners } = registerAndCapture()
+    const getPathForFile = vi.fn(() => 'C:\\outside\\todo.md')
+    ctx.env.nodeRequire = vi.fn(() => ({ webUtils: { getPathForFile } }))
+    right.classList.add(dragClassName)
+
+    const file = { name: 'todo.md', type: 'text/markdown' }
+    const event = createDragEvent(target, {
+      getAsFile: vi.fn(() => file),
+      kind: 'file',
+      type: 'text/markdown',
+    })
+    windowListeners.drop(event)
+
+    expect(getPathForFile).toHaveBeenCalledWith(file)
+    expect(ctx.doc.switchDocByPath).toHaveBeenCalledWith('C:\\outside\\todo.md')
+  })
+
   test('drop ignores image files so the editor can handle them', () => {
     const { target } = createLayout()
     const { ctx, windowListeners } = registerAndCapture()

@@ -16,6 +16,34 @@ export default {
       return document.body.querySelector(rightSelector)
     }
 
+    function getFile (item: DataTransferItem): (File & { path?: string }) | null {
+      if ('getAsFile' in item) {
+        return item.getAsFile() as (File & { path?: string }) | null
+      }
+
+      return null
+    }
+
+    function getFilePath (file: File & { path?: string } | null): string {
+      if (!file) {
+        return ''
+      }
+
+      // File.path was removed from Electron 32. Keep it as a fallback for
+      // older Electron versions and use webUtils for current versions.
+      if (file.path) {
+        return file.path
+      }
+
+      try {
+        const webUtils = ctx.env.nodeRequire?.('electron')?.webUtils
+        return webUtils?.getPathForFile(file) || ''
+      } catch {
+        // The browser/demo environment does not expose Electron webUtils.
+        return ''
+      }
+    }
+
     function isDragFile (e: DragEvent): boolean {
       const hasFile = !!e.dataTransfer?.items &&
         e.dataTransfer.items.length > 0 &&
@@ -41,7 +69,7 @@ export default {
         const item = e.dataTransfer?.items?.[0]
         // if drag image file, do nothing. let editor handle it
         if (item && !item.type.toLowerCase().startsWith('image')) {
-          const path = (item?.getAsFile() as any)?.path
+          const path = getFilePath(getFile(item))
           if (path) {
             e.stopPropagation()
             e.preventDefault()
