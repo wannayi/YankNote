@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: v*
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing tag to publish
+        required: true
+        default: v3.92.2
 
 jobs:
   build:
@@ -128,6 +134,7 @@ jobs:
 
       - name: Upload to COS
         if: contains(github.ref_name, '-next-') != true
+        continue-on-error: true
         run: |
           coscmd upload -r out / --include out/Yank-Note*.*,out/latest*.yml
 
@@ -136,6 +143,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
           prerelease: true
           files: |
             out/Yank-Note*.*
