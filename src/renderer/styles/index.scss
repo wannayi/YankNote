@@ -1,0 +1,260 @@
+@use 'sass:meta';
+@use 'sass:color';
+@use 'sass:math' as *;
+@use './mixins.scss' as *;
+@use './dark.scss' as dark;
+@use './light.scss' as light;
+
+@import 'normalize.css' layer;
+
+@function hex2rgb($hex) {
+  @return color.channel($hex, 'red', $space: rgb), color.channel($hex, 'green', $space: rgb), color.channel($hex, 'blue', $space: rgb);
+}
+
+@font-face {
+  font-family: 'MacEmoji';
+  src: local('Apple Color Emoji');
+  unicode-range: U+2600-2714;
+}
+
+@mixin root-vars($background, $foreground) {
+  --g-background-color: #{$background};
+  --g-background-color-rgb: #{hex2rgb($background)};
+  --g-foreground-color: #{$foreground};
+  --g-foreground-color-rgb: #{hex2rgb($foreground)};
+  @for $i from 0 through 100 {
+    --g-color-#{$i}: #{color.mix($background, $foreground, $i * 1%)};
+    --g-color-#{$i}-rgb: #{hex2rgb(color.mix($background, $foreground, $i * 1%))};
+  }
+
+  --selection-color: rgba(86, 155, 214, 0.38);
+
+  --scrollbar-track-background-color: #{rgba($foreground, 0.05)};
+  --scrollbar-thumb-background-color: #{rgba($foreground, 0.2)};
+  --scrollbar-thumb-hover-background-color: #{rgba($foreground, 0.3)};
+
+  --g-border-radius: 4px;
+  --g-backdrop-filter: blur(18px);
+  --g-color-backdrop: #{rgba(var(--g-color-95-rgb), 0.87)};
+  --g-color-accent: rgb(20, 112, 251);
+  --g-color-anchor: #4c93e2;
+
+  --g-color-active-x: #{rgba(var(--g-color-0-rgb), 0.05)};
+  --g-color-active-a: #{rgba(var(--g-color-0-rgb), 0.1)};
+  --g-color-active-b: #{rgba(var(--g-color-0-rgb), 0.15)};
+  --g-color-active-c: #{rgba(var(--g-color-0-rgb), 0.2)};
+  --g-color-active-d: #{rgba(var(--g-color-0-rgb), 0.25)};
+}
+
+html {
+  // for export to html
+  --common-styles: 1;
+  --skip-contain: 1;
+}
+
+html[app-theme=light]:root, :root {
+  @include meta.load-css('./light.scss');
+  @include root-vars(light.$g-background-color, light.$g-foreground-color);
+  color-scheme: only light;
+}
+
+@include dark-theme {
+  @include meta.load-css('./dark.scss');
+  @include root-vars(dark.$g-background-color, dark.$g-foreground-color);
+
+  --g-color-backdrop: #{rgba(var(--g-color-88-rgb), 0.9)};
+
+  &:root {
+    color-scheme: only dark;
+  }
+}
+
+html {
+  outline: none;
+  font-family: system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;
+  accent-color: var(--g-color-accent);
+
+  &[platform^=Win] {
+    font-family: arial,system-ui,Segoe UI,Helvetica,sans-serif;
+  }
+}
+
+a {
+  color: var(--g-color-anchor);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+::selection {
+  background: var(--selection-color);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  border-radius: 2px;
+  background: var(--scrollbar-track-background-color);
+  box-shadow: none;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: var(--g-border-radius);
+  background: var(--scrollbar-thumb-background-color);
+  box-shadow: none;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover-background-color);
+}
+
+@media print {
+  html {
+    background: #fff !important;
+  }
+
+  .skip-print {
+    display: none !important;
+  }
+}
+
+@media screen {
+  body {
+    background: var(--g-background-color);
+    color: var(--g-foreground-color);
+  }
+
+  @layer global-screen {
+    input[type=range] {
+      accent-color: var(--g-color-40);
+    }
+
+    input:not([type=checkbox]):not([type=radio]):not([type=range]), textarea, select {
+      display: block;
+      width: 100%;
+      margin: 0;
+      border: 0;
+      font-size: 18px;
+      line-height: 1.4em;
+      padding: 6px;
+      box-sizing: border-box;
+      background: rgba(var(--g-color-0-rgb), 0.1);
+      color: var(--g-color-0);
+      transition: all .1s ease-in-out;
+      outline: none;
+      border-radius: var(--g-border-radius);
+
+      &:focus {
+        background: rgba(var(--g-color-0-rgb), 0.15);
+      }
+    }
+
+    select {
+      display: initial;
+      width: initial;
+
+      option {
+        background-color: var(--g-color-88);
+      }
+    }
+
+    button {
+      background-color: var(--g-color-80);
+      border: none;
+      padding: 5px 10px;
+      color: var(--g-color-0);
+      cursor: pointer;
+      border-radius: var(--g-border-radius);
+      transition: all .1s ease-in-out;
+      margin-left: 5px;
+      font-weight: 500;
+      outline: none;
+      user-select: none;
+
+      &.tr {
+        background-color: var(--g-color-active-a);
+      }
+
+      &.primary {
+        background-color: var(--g-color-70);
+
+        &.tr {
+          background-color: var(--g-color-active-d);
+        }
+      }
+
+      &:hover {
+        background-color: var(--g-color-65);
+
+        &.tr {
+          background-color: var(--g-color-active-c);
+        }
+      }
+
+      &.small {
+        font-size: 14px;
+        padding: 3px 6px;
+        font-weight: normal;
+      }
+
+      &[disabled] {
+        background-color: var(--g-color-90);
+        cursor: not-allowed;
+        &.tr {
+          background-color: rgba(var(--g-color-40-rgb), 0.2);
+        }
+      }
+
+      &:focus {
+        outline: 1px var(--g-color-accent) dashed;
+        outline-offset: -1px;
+      }
+    }
+  }
+}
+
+.avoid-page-break {
+  page-break-inside: avoid;
+}
+
+.new-page {
+  page-break-before: always;
+}
+
+.bgw {
+  background-color: #fff !important;
+}
+
+.inline {
+  display: inline !important;
+}
+
+.block {
+  display: block !important;
+}
+
+[display-none] {
+  display: none !important;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.with-border {
+  border: 1px solid var(--g-color-80);
+  border-radius: var(--g-border-radius);
+}

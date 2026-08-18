@@ -1,0 +1,441 @@
+import MarkdownItContainer from 'markdown-it-container'
+import { applyAttrs, getAttrs, parseInfo } from 'markdown-it-attributes'
+import { Fragment, h } from 'vue'
+import type Token from 'markdown-it/lib/token'
+import type StateBlock from 'markdown-it/lib/rules_block/state_block'
+import { Plugin } from '@fe/context'
+
+const RAW_HTML_MARKER = 0x3A // ':'
+const CONTAINER_NAMES = ['tip', 'warning', 'danger', 'details', 'group-item', 'group', 'row', 'col', 'section', 'div', 'code-group']
+
+function rawHtmlContainer (state: StateBlock, startLine: number, endLine: number, silent: boolean) {
+  if (!state.md.options.html || (state.env as { safeMode?: boolean })?.safeMode) {
+    return false
+  }
+
+  let start = state.bMarks[startLine] + state.tShift[startLine]
+  let max = state.eMarks[startLine]
+
+  if (state.src.charCodeAt(start) !== RAW_HTML_MARKER) {
+    return false
+  }
+
+  let pos = start + 1
+  while (pos <= max && state.src.charCodeAt(pos) === RAW_HTML_MARKER) {
+    pos++
+  }
+
+  const markerCount = pos - start
+  const params = state.src.slice(pos, max).trim()
+  if (markerCount < 3 || params.split(/\s+/, 1)[0] !== 'html') {
+    return false
+  }
+
+  if (silent) {
+    return true
+  }
+
+  let nextLine = startLine
+  let autoClosed = false
+
+  for (;;) {
+    nextLine++
+    if (nextLine >= endLine) {
+      break
+    }
+
+    start = state.bMarks[nextLine] + state.tShift[nextLine]
+    max = state.eMarks[nextLine]
+
+    if (start < max && state.sCount[nextLine] < state.blkIndent) {
+      break
+    }
+
+    if (state.src.charCodeAt(start) !== RAW_HTML_MARKER || state.sCount[nextLine] - state.blkIndent >= 4) {
+      continue
+    }
+
+    pos = start + 1
+    while (pos <= max && state.src.charCodeAt(pos) === RAW_HTML_MARKER) {
+      pos++
+    }
+
+    if (pos - start < markerCount || state.skipSpaces(pos) < max) {
+      continue
+    }
+
+    autoClosed = true
+    break
+  }
+
+  const token = state.push('html_block', '', 0)
+  token.block = true
+  token.markup = ':'.repeat(markerCount)
+  token.info = params
+  token.content = state.getLines(startLine + 1, nextLine, state.blkIndent, true)
+  token.map = [startLine + 1, nextLine]
+
+  state.line = nextLine + (autoClosed ? 1 : 0)
+  return true
+}
+
+export default {
+  name: 'markdown-container',
+  register: ctx => {
+    ctx.view.addStyles(`
+      .markdown-view .markdown-body .custom-container.section {
+        padding: 12px;
+        border: 1px solid var(--g-color-80);
+        border-radius: var(--g-border-radius);
+        margin-top: 16px;
+        position: relative;
+      }
+
+      .markdown-view .markdown-body .custom-container.section > :first-child {
+        margin-top: 0;
+      }
+
+      .markdown-view .markdown-body .custom-container.row {
+        display: flex;
+        justify-content: space-between;
+        position: relative;
+        margin-top: 16px;
+      }
+
+      .markdown-view .markdown-body .custom-container.row.has-title {
+        border-top: 24px solid transparent;
+      }
+
+      .markdown-view .markdown-body .custom-container.row > .custom-container-title {
+        background: var(--g-color-80);
+        position: absolute;
+        padding-left: 8px;
+        margin: 0;
+        font-size: 14px;
+        line-height: 2.2em;
+        left: 0;
+        top: -2.2em;
+        width: 100%;
+        border: 1px solid var(--g-color-80);
+        border-top-left-radius: var(--g-border-radius);
+        border-top-right-radius: var(--g-border-radius);
+      }
+
+      .markdown-view .markdown-body .custom-container.row > .custom-container.col > .custom-container-title {
+        font-size: 14px;
+        line-height: 1.2;
+      }
+
+      .markdown-view .markdown-body .custom-container.col {
+        width: 100%;
+        padding: 12px;
+        padding-bottom: 0;
+        border: 1px solid var(--g-color-80);
+        border-radius: var(--g-border-radius);
+        margin-right: 8px;
+        background: var(--g-color-100);
+      }
+
+      .markdown-view .markdown-body .custom-container.row.has-title > .custom-container.col {
+        margin-right: -1px;
+        border-radius: 0;
+      }
+
+      .markdown-view .markdown-body .custom-container.col:last-of-type,
+      .markdown-view .markdown-body .custom-container.row.has-title > .custom-container.col:last-of-type {
+        margin-right: 0;
+        border-bottom-right-radius: var(--g-border-radius);
+      }
+
+      .markdown-view .markdown-body .custom-container.row.has-title > .custom-container.col:first-of-type {
+        border-bottom-left-radius: var(--g-border-radius);
+      }
+
+      .markdown-view .markdown-body .custom-container.details,
+      .markdown-view .markdown-body .custom-container.danger,
+      .markdown-view .markdown-body .custom-container.warning,
+      .markdown-view .markdown-body .custom-container.tip {
+        padding: 2px 16px;
+        padding-top: 16px;
+        margin: 16px 0;
+        border-left-width: 8px;
+        border-left-style: solid;
+        border-radius: var(--g-border-radius);
+      }
+
+      .markdown-view .markdown-body .custom-container.danger,
+      .markdown-view .markdown-body .custom-container.warning,
+      .markdown-view .markdown-body .custom-container.tip {
+        page-break-inside: avoid;
+      }
+
+      .markdown-view .markdown-body .custom-container-title {
+        font-weight: 600;
+        margin-bottom: 10px;
+        margin-top: -6px;
+        font-size: 1.1em;
+      }
+
+      .markdown-view .markdown-body .custom-container.danger {
+        border-color: #cc0000;
+        background-color: light-dark(#ffe0e0, #503f3f);
+        color: light-dark(#800000, #d9bebe);
+      }
+
+      .markdown-view .markdown-body .custom-container.warning {
+        border-color: #e7c000;
+        background-color: #fffae3;
+        color: #746000;
+      }
+
+      .markdown-view .markdown-body .custom-container.tip {
+        border-color: #42b983;
+        background-color: var(--g-color-90);
+        color: var(--g-color-10);
+      }
+
+      .markdown-view .markdown-body .custom-container.details {
+        border: none;
+        background-color: var(--g-color-90);
+        padding: 16px 20px;
+      }
+
+      .markdown-view .markdown-body .custom-container.details > summary {
+        margin-top: 0;
+      }
+
+      .markdown-view .markdown-body .custom-container.details > summary + *,
+      .markdown-view .markdown-body .custom-container.details > :first-child:not(summary) {
+        margin-top: 16px;
+      }
+
+      .markdown-view .markdown-body .custom-container.details > :last-child:not(summary) {
+        margin-bottom: 0;
+      }
+
+      .markdown-view .markdown-body .custom-container.group {
+        position: relative;
+        display: flex;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+        background: var(--g-color-80);
+        border-radius: var(--g-border-radius);
+        border: 1px solid var(--g-color-80);
+      }
+
+      .markdown-view .markdown-body .custom-container.group p {
+        order: 100;
+        width: 100%;
+      }
+
+      .markdown-view .markdown-body .custom-container.group > .custom-container-title {
+        order: 1;
+        padding-left: 8px;
+        margin: 0;
+        font-size: 14px;
+        line-height: 2.2em;
+      }
+
+      .markdown-view .markdown-body .custom-container.group .group-item-radio {
+        display: none;
+      }
+
+      .markdown-view .markdown-body .custom-container.group .group-item-label {
+        order: 1;
+        cursor: pointer;
+        font-size: 14px;
+        line-height: 2;
+        padding: 0 1em;
+        color: var(--g-color-20);
+      }
+
+      .markdown-view .markdown-body .custom-container.group .group-item-label:hover {
+        background: var(--g-color-85);
+      }
+
+      .markdown-view .markdown-body .custom-container.group .group-item-content {
+        order: 2;
+        width: 100%;
+        display: none;
+        border-radius: var(--g-border-radius);
+        border-top-left-radius: 0;
+        padding: 12px;
+        padding-bottom: 0;
+        background: var(--g-color-100);
+      }
+
+      .markdown-view .markdown-body .custom-container.group .group-item-radio:checked + .group-item-label {
+        background: var(--g-color-100);
+        border-top-left-radius: var(--g-border-radius);
+        border-top-right-radius: var(--g-border-radius);
+        color: var(--g-color-0);
+        font-weight: 500;
+      }
+
+      .markdown-view .markdown-body .custom-container.group .group-item-radio:checked + .group-item-label + .group-item-content {
+        display: block;
+      }
+    `)
+
+    let groupItemIdx = 0
+    let groupItemSeq = 0
+    let groupItemBase = Date.now()
+    let groupItemName = groupItemBase + groupItemSeq
+    const groupItemContentClass = 'group-item-content'
+
+    ctx.registerHook('MARKDOWN_BEFORE_RENDER', ({ env }) => {
+      // first render, reset count
+      if (env.renderCount === 0) {
+        groupItemBase = Date.now()
+      }
+
+      groupItemSeq = 0
+    })
+
+    function buildGroupItem (token: Token, title: string, attrs?: Record<string, string>) {
+      const parent = h('div', attrs || Object.fromEntries(token.attrs || []), [])
+      const radioName = `group-item-${groupItemName}`
+      const id = `group-item-${groupItemName}-${groupItemIdx++}`
+      const checked = groupItemIdx === 1 || title.startsWith('*')
+
+      return {
+        node: h(Fragment, [
+          h('input', { key: id, class: 'group-item-radio', id, name: radioName, type: 'radio', 'data-default-checked': checked, checked }),
+          h('label', { class: 'group-item-label', for: id }, title.replace('*', '').trim() || 'Group Item'),
+          parent
+        ]),
+        parent
+      }
+    }
+
+    ctx.markdown.registerPlugin(md => {
+      md.block.ruler.before('fence', 'container_html_raw', rawHtmlContainer, {
+        alt: ['paragraph', 'reference', 'blockquote', 'list']
+      })
+
+      CONTAINER_NAMES.forEach(name => {
+        const reg = new RegExp(`^${name}\\s*(.*)$`)
+
+        md.use(MarkdownItContainer, name, {
+          validate: (params: string) => {
+            return reg.test(params.trim())
+          },
+          render: function (tokens: Token[], idx: number) {
+            const token = tokens[idx]
+
+            if (token.nesting === 1) {
+              // TODO: get options
+              const attrsOpts = { leftDelimiter: '{', rightDelimiter: '}', allowedAttributes: undefined }
+
+              // apply attributes
+              const attrInfo = parseInfo(attrsOpts, token.info)
+              if (attrInfo) {
+                const attrs = getAttrs(attrInfo.exp)
+                token.info = attrInfo.text
+                applyAttrs(attrsOpts, token, attrs)
+              }
+
+              const match = token.info.trim().match(reg)
+              const title = md.utils.escapeHtml(match![1])
+              const isGroup = name === 'group' || name === 'code-group'
+
+              const containerClass = isGroup ? 'custom-container group' : `custom-container ${name}`
+
+              if (name === 'group-item') {
+                token.attrJoin('class', groupItemContentClass)
+                return buildGroupItem(token, title)
+              } else if (isGroup) {
+                groupItemIdx = 0
+                groupItemSeq++
+                groupItemName = groupItemBase + groupItemSeq
+              }
+
+              const containerTag = { details: 'details', section: 'section' }[name] || 'div'
+              const titleTag = name === 'details' ? 'summary' : 'p'
+              const titleClass = name === 'details' ? '' : 'custom-container-title'
+
+              const children = (title || isGroup) ? [h(titleTag, { class: titleClass }, title)] : []
+
+              token.attrJoin('class', containerClass)
+              if (title) {
+                token.attrJoin('class', 'has-title')
+              }
+
+              const props: Record<string, any> = Object.fromEntries(token.attrs || [])
+
+              if (isGroup) {
+                props.key = groupItemName
+              }
+
+              if (name === 'code-group') {
+                for (
+                  let i = idx + 1;
+                  !(
+                    tokens[i].nesting === -1 &&
+                    tokens[i].type === 'container_code-group_close'
+                  );
+                  ++i
+                ) {
+                  const token = tokens[i]
+                  if (token.type === 'fence' && token.tag === 'code') {
+                    if (!token.meta) {
+                      token.meta = {}
+                    }
+
+                    token.meta.isCodeGroupItem = true
+                  }
+                }
+              }
+
+              return h(containerTag, props, children)
+            }
+          }
+        })
+      })
+
+      const renderFence = md.renderer.rules.fence!
+      const infoTitleReg = /\[([^\]]*)\]/
+
+      md.renderer.rules.fence = (tokens, idx, options, env, slf) => {
+        const token = tokens[idx]
+        if (token.meta && token.meta.isCodeGroupItem) {
+          const title = token.info.match(infoTitleReg)?.[1] || token.info || 'txt'
+          token.info = token.info.replace(infoTitleReg, '').trim()
+
+          const groupItem = buildGroupItem(token, title, { class: groupItemContentClass })
+          ;(groupItem.parent.children as any[]).push(
+            renderFence.call(slf, tokens, idx, options, env, slf)
+          )
+
+          return groupItem.node as any
+        }
+
+        return renderFence.call(slf, tokens, idx, options, env, slf)
+      }
+    })
+
+    ctx.registerHook('VIEW_ON_GET_HTML_FILTER_NODE', ({ node }) => {
+      if (node.classList.contains('group-item-radio') && node.dataset.defaultChecked === 'true') {
+        node.setAttribute('checked', 'checked')
+      }
+    })
+
+    ctx.editor.tapSimpleCompletionItems(items => {
+      /* eslint-disable no-template-curly-in-string */
+
+      items.push(
+        { language: 'markdown', label: '/ ::: Container', insertText: '${3|:::,::::,:::::|} ${1|tip,warning,danger,details,code-group,group,group-item,row,col,section,div|} ${2:Title}\n${4:Content}\n${3|:::,::::,:::::|}\n', block: true, surroundSelection: '${4:Content}' },
+        { language: 'markdown', label: '/ ::: Raw HTML', insertText: '::: html\n${1:<div>Raw HTML</div>}\n:::\n', block: true, surroundSelection: '${1:<div>Raw HTML</div>}' },
+        { language: 'markdown', label: '/ ::: Group Container', insertText: ':::: group ${1:Title}\n::: group-item Tab 1\ntest 1\n:::\n::: group-item *Tab 2\ntest 2\n:::\n::: group-item Tab 3\ntest 3\n:::\n::::\n', block: true },
+        { language: 'markdown', label: '/ ::: Code Group Container', insertText: '::: code-group ${1:Title}\n${2:```js [test.js]\nlet a = 1\n```\n\n```ts [test.ts]\nlet a: number = 1\n```}\n:::\n', block: true },
+        { language: 'markdown', label: '/ ::: Column Container', insertText: ':::: row ${1:Title}\n::: col\ntest 1\n:::\n::: col\ntest 2\n:::\n::::\n', block: true },
+      )
+    })
+
+    ctx.editor.tapMarkdownMonarchLanguage(mdLanguage => {
+      mdLanguage.tokenizer.root.unshift(
+        [/^:{3,}.*$/, 'tag']
+      )
+    })
+  }
+} as Plugin

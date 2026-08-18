@@ -1,0 +1,141 @@
+name: Release
+
+on:
+  push:
+    tags: v*
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-15
+            platform: 'mac'
+          - os: windows-2022
+            platform: 'win'
+          - os: ubuntu-22.04
+            platform: 'linux'
+    runs-on: ${{ matrix.os }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Set git config
+        run: |
+          git config --global core.autocrlf false
+
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Setup Python environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11.5'
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v2.1.2
+        with:
+          node-version: 22.x
+
+      - name: Install
+        run: |
+          yarn install
+          yarn electron-rebuild
+          node scripts/download-pandoc.js
+          node scripts/download-plantuml.js
+
+      - name: Set env
+        if: matrix.platform == 'mac'
+        run: |
+          echo "APPLEID=${{ secrets.APPLEID }}" >> $GITHUB_ENV
+          echo "APPLEIDPASS=${{ secrets.APPLEIDPASS }}" >> $GITHUB_ENV
+          echo "TEAMID=${{ secrets.TEAMID }}" >> $GITHUB_ENV
+          echo "CSC_LINK=${{ secrets.CSC_LINK }}" >> $GITHUB_ENV
+          echo "CSC_KEY_PASSWORD=${{ secrets.CSC_KEY_PASSWORD }}" >> $GITHUB_ENV
+
+      - name: Build
+        run: |
+          yarn build
+
+      - name: Electron-Win
+        if: matrix.platform == 'win'
+        run: |
+          yarn run electron-builder --${{ matrix.platform }} -p never | sed 's/identityName=.*$//'
+          if (!(Test-Path out/win-unpacked/resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node)) { throw 'node-pty not exist' }
+
+      - name: Electron-Mac
+        if: matrix.platform == 'mac'
+        run: |
+          sh ./scripts/download-ripgrep.sh
+          yarn run electron-builder --${{ matrix.platform }} --x64 -p never | sed 's/identityName=.*$//'
+          find ./out -regex '.*app.asar.unpacked/node_modules/node-pty/build/Release/pty.node$' | grep pty.node
+          mv out/latest-mac.yml out/latest-mac-x64.yml
+          yarn electron-rebuild --arch=arm64
+          sed -i '' 's/out\/mac\/Yank Note.app/out\/mac-arm64\/Yank Note.app/' electron-builder.json
+          yarn run electron-builder --${{ matrix.platform }} --arm64 -p never | sed 's/identityName=.*$//'
+          mv out/latest-mac.yml out/latest-mac-arm64.yml
+          cat out/latest-mac-arm64.yml out/latest-mac-x64.yml | sed '9,13d' > out/latest-mac.yml
+
+      - name: Electron-Linux
+        if: matrix.platform == 'linux'
+        run: |
+          yarn run electron-builder --${{ matrix.platform }} -p never | sed 's/identityName=.*$//'
+          find ./out -regex '.*app.asar.unpacked/node_modules/node-pty/build/Release/pty.node$' | grep pty.node
+
+      - name: Electron-Linux-Arm64
+        if: matrix.platform == 'linux' && matrix.os != 'ubuntu-18.04'
+        run: |
+          export npm_config_arch=arm64
+          node "./node_modules/@vscode/ripgrep/lib/postinstall.js" --force
+          node scripts/download-pandoc.js --force-arm64
+          yarn electron-rebuild --arch=arm64
+          yarn run electron-builder --${{ matrix.platform }} --arm64 -p never | sed 's/identityName=.*$//'
+
+      - name: Rename Artifact for Ubuntu-18.04
+        if: matrix.os == 'ubuntu-18.04'
+        run: |
+          mv out/*.deb out/`basename -s .deb out/*.deb`-ubuntu-18.04.deb
+          rm out/*.AppImage
+
+      - name: Setup Python environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install coscmd
+        if: matrix.platform != 'win' && contains(github.ref_name, '-next-') != true
+        env:
+          COS_SECRET_ID: ${{ secrets.COS_SECRET_ID }}
+          COS_SECRET_KEY: ${{ secrets.COS_SECRET_KEY }}
+          COS_BUCKET: ${{ secrets.COS_BUCKET }}
+        run: |
+          pip install coscmd
+          coscmd config -a $COS_SECRET_ID -s $COS_SECRET_KEY -b $COS_BUCKET -e cos.accelerate.myqcloud.com
+
+      - name: Install coscmd for Windows
+        if: matrix.platform == 'win' && contains(github.ref_name, '-next-') != true
+        shell: cmd
+        env:
+          COS_SECRET_ID: ${{ secrets.COS_SECRET_ID }}
+          COS_SECRET_KEY: ${{ secrets.COS_SECRET_KEY }}
+          COS_BUCKET: ${{ secrets.COS_BUCKET }}
+        run: |
+          pip install --upgrade --no-cache-dir coscmd
+          coscmd config -a "%COS_SECRET_ID%" -s "%COS_SECRET_KEY%" -b "%COS_BUCKET%" -e cos.accelerate.myqcloud.com
+
+      - name: Upload to COS
+        if: contains(github.ref_name, '-next-') != true
+        run: |
+          coscmd upload -r out / --include out/Yank-Note*.*,out/latest*.yml
+
+      - name: GH Release
+        uses: softprops/action-gh-release@v2.0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          prerelease: true
+          files: |
+            out/Yank-Note*.*
+            out/latest*.yml

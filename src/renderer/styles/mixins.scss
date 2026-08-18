@@ -1,0 +1,13 @@
+@mixin dark-theme {
+  @media screen {
+    html[app-theme=dark] {
+      @content
+    }
+  }
+
+  @media (prefers-color-scheme: dark) {
+    html[app-theme=system] {
+      @content
+    }
+  }
+}

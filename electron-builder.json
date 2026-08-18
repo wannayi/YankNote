@@ -1,0 +1,68 @@
+{
+  "appId": "yank.note",
+  "productName": "Yank Note",
+  "copyright": "Copyright 2018-2021 purocean@outlook.com",
+  "asar": true,
+  "asarUnpack": [
+    "bin/**/*",
+    "help/**/*",
+    "dist/main/resources/**/*",
+    "node_modules/fsevents/**/*",
+    "node_modules/node-pty/**/*",
+    "node_modules/@vscode/ripgrep/**/*"
+  ],
+  "files": [
+    "./bin/**",
+    "./help/**",
+    "./dist/**",
+    "!node_modules/plantuml-pipe/vendor/*"
+  ],
+  "artifactName": "Yank-Note-${os}-${arch}-${version}.${ext}",
+  "directories": {
+    "output": "./out/"
+  },
+  "npmRebuild": false,
+  "win": {
+    "target": [
+      "zip",
+      "nsis"
+    ],
+    "icon": "./build/icon.ico"
+  },
+  "linux": {
+    "executableName": "yank-note",
+    "category": "Markdown",
+    "maintainer": "purocean <purocean@outlook.com>",
+    "icon": "./build/icon.icns",
+    "target": [
+      "deb",
+      "AppImage"
+    ]
+  },
+  "mac": {
+    "icon": "./build/icon.icns",
+    "gatekeeperAssess": false,
+    "hardenedRuntime": true,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist",
+    "binaries": [
+      "out/mac/Yank Note.app/Contents/Resources/app.asar.unpacked/bin/darwin-pandoc-2.14.2"
+    ],
+    "target": [
+      "dmg",
+      "zip"
+    ]
+  },
+  "afterSign": "scripts/notarize.js",
+  "nsis": {
+    "perMachine": false
+  },
+  "fileAssociations": [
+    {
+      "ext": "md",
+      "name": "Markdown File",
+      "description": "Markdown File",
+      "role": "Editor"
+    }
+  ]
+}

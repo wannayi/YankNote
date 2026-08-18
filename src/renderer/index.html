@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <link rel="icon" href="./assets/favicon.ico">
+    <link rel="stylesheet" href="./styles/index.scss">
+    <title>Yank Note</title>
+    <script>
+      // 强制 monaco-editor 使用 浏览器模式
+      window.nodeRequire = window.require
+      window.nodeProcess = window.process
+      window.nodeModule = window.module
+      window.require = undefined
+      window.process = undefined
+      window.module = undefined
+
+      const realLocalStorage = localStorage
+      const initialTheme = realLocalStorage['app.theme'] || '"system"'
+
+      // initial theme
+      window.document.documentElement.setAttribute('app-theme', JSON.parse(initialTheme))
+
+      // os
+      window.document.documentElement.setAttribute('platform', navigator.platform)
+
+      function _$args () {
+        const win = window.opener || window.parent || window
+        return new URLSearchParams(win.location.search)
+      }
+
+      const args = _$args()
+      const MODE = args.get('mode') || 'normal'
+      const IS_MCP_EXPORT = args.get('mcp-export') === 'true'
+      const USE_MEMORY_LOCAL_STORAGE = MODE === 'share-preview' || IS_MCP_EXPORT
+
+      if (USE_MEMORY_LOCAL_STORAGE) {
+        const initialValues = {}
+
+        if (IS_MCP_EXPORT) {
+          for (let i = 0; i < realLocalStorage.length; i++) {
+            const key = realLocalStorage.key(i)
+            if (key) {
+              initialValues[key] = realLocalStorage.getItem(key)
+            }
+          }
+        }
+
+        Object.defineProperty(window, 'localStorage', {
+          value: (function () {
+            const s = { ...initialValues }
+
+            Object.defineProperty(s, 'setItem', {
+              get: () => {
+                return (k, v) => {
+                  s[String(k)] = String(v)
+                }
+              }
+            })
+
+            Object.defineProperty(s, 'getItem', {
+              get: () => {
+                return (k) => {
+                  if (Object.prototype.hasOwnProperty.call(s, String(k))) {
+                    return s[String(k)]
+                  } else {
+                    return null
+                  }
+                }
+              }
+            })
+
+            Object.defineProperty(s, 'removeItem', {
+              get: () => {
+                return (k) => {
+                  if (Object.prototype.hasOwnProperty.call(s, String(k))) {
+                    delete s[String(k)]
+                  }
+                }
+              }
+            })
+
+            Object.defineProperty(s, 'clear', {
+              get: () => {
+                return () => {
+                  for (const k in s) {
+                    delete s[String(k)]
+                  }
+                }
+              }
+            })
+
+            Object.defineProperty(s, 'length', {
+              get: () => {
+                return Object.keys(s).length
+              }
+            })
+
+            Object.defineProperty(s, 'key', {
+              get: () => {
+                return (i) => {
+                  return Object.keys(s)[Number(i)] || null
+                }
+              }
+            })
+
+            return s
+          })(),
+        })
+      }
+    </script>
+    <script src="/api/settings/js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./index.ts"></script>
+  </body>
+</html>
